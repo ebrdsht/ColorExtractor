@@ -1,0 +1,105 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+*.pyd
+*.dll
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+pip-wheel-metadata/
+
+# Virtual environments
+.env
+.env.*
+venv/
+venv*/
+.venv/
+ENV/
+env/
+envs/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+htmlcov/
+coverage.xml
+nosetests.xml
+
+# Translations
+*.mo
+*.pot
+
+# Django / Flask / local settings and SQLite
+local_settings.py
+*.sqlite3
+*.db
+*.sqlite
+*.sqlite3-journal
+instance/
+.webassets-cache
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Type checker caches
+.mypy_cache/
+.pyre/
+.pytype/
+
+# System files
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# IDEs and editors
+.vscode/
+.idea/
+*.sublime-workspace
+*.code-workspace
+
+# Logs
+*.log
+start_log.txt
+
+# Secrets / keys
+*.pem
+*.key
+credentials.json
+secrets.json
+.env
+.env.local
+
+# Others
+*.cover
+coverage.*
+
+# Node (in case)
+node_modules/
+
+# Compiled objects
+*.o
+*.a
+*.lib
+
+# End of .gitignore

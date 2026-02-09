@@ -67,6 +67,9 @@ class ColorExtractor(tk.Tk):
         self.max_error = MAX_ERROR
         # palette instance (needed for settings to apply)
         self.palette = Palette()
+        # Keep palette scrollbar usable by enforcing a minimum thumb fraction (e.g. 8% of track)
+        # This prevents the thumb from becoming too small to grab when there are many colors.
+        self._min_scroll_frac = 0.08
         # Load persisted settings if present (non-fatal)
         try:
             self.load_settings()
@@ -233,6 +236,14 @@ class ColorExtractor(tk.Tk):
         # Keep a reference and guard sash movement so the right pane cannot be collapsed
         try:
             self.main_paned = main
+            # Minimum visible width for right-hand pane to keep scrollbar usable
+            try:
+                MIN_RIGHT_PANE = 160
+                # set a firm minimum so the user cannot collapse the pane below a usable width
+                self._right_pane_minsize = max(getattr(self, '_right_pane_minsize', 0) or 0, MIN_RIGHT_PANE)
+                main.paneconfigure(self.main_paned, minsize=self._right_pane_minsize)
+            except Exception:
+                pass
             # Use press/release + global motion binding to reliably detect sash dragging across platforms
             main.bind('<ButtonPress-1>', lambda e: self._on_pane_press(e, self.main_paned))
             main.bind('<ButtonRelease-1>', lambda e: self._on_pane_release(e, self.main_paned))
@@ -251,6 +262,14 @@ class ColorExtractor(tk.Tk):
         # Right: palette list
         right = ttk.Frame(main)
         main.add(right, weight=1)
+        # keep a reference to the right pane widget
+        try:
+            self._right_pane_widget = right
+            # Do not force a firm minimum width here; allow layout to condense buttons naturally.
+            # The palette rendering will adapt its columns to remain vertically scrollable.
+            self._right_pane_minsize = getattr(self, '_right_pane_minsize', None)
+        except Exception:
+            pass
 
         ctrl = ttk.Frame(right)
         ctrl.pack(fill='x', pady=4)
@@ -403,13 +422,46 @@ class ColorExtractor(tk.Tk):
         self.palette_frame.pack(fill='both', expand=True)
         # scrollable region
         self.canvas_palette = tk.Canvas(self.palette_frame, borderwidth=0, highlightthickness=0)
-        self.scrollbar = ttk.Scrollbar(self.palette_frame, orient='vertical', command=self.canvas_palette.yview)
+        self.scrollbar = ttk.Scrollbar(self.palette_frame, orient='vertical', command=self._on_scrollbar)
         self.scrollable = ttk.Frame(self.canvas_palette)
         self.scrollable.bind("<Configure>", lambda e: self.canvas_palette.configure(scrollregion=self.canvas_palette.bbox("all")))
-        self.canvas_palette.create_window((0,0), window=self.scrollable, anchor='nw')
-        self.canvas_palette.configure(yscrollcommand=self.scrollbar.set)
-        self.canvas_palette.pack(side=LEFT, fill='both', expand=True)
-        self.scrollbar.pack(side=RIGHT, fill='y')
+        # create window and keep a reference so we can resize it when the canvas changes
+        self._palette_window = self.canvas_palette.create_window((0,0), window=self.scrollable, anchor='nw')
+        # Use a custom yscroll handler to support a minimum thumb size for usability
+        self.canvas_palette.configure(yscrollcommand=self._on_canvas_scroll)
+        # Layout using grid so the scrollbar stays visible even when the pane is very narrow
+        try:
+            self.canvas_palette.grid(row=0, column=0, sticky='nsew')
+            try:
+                self.scrollbar.config(width=18)
+            except Exception:
+                pass
+            self.scrollbar.grid(row=0, column=1, sticky='ns')
+            # Ensure palette_frame grid expands correctly
+            try:
+                self.palette_frame.grid_rowconfigure(0, weight=1)
+                self.palette_frame.grid_columnconfigure(0, weight=1)
+                self.palette_frame.grid_columnconfigure(1, weight=0)
+            except Exception:
+                pass
+        except Exception:
+            # fallback to pack if grid fails for some reason
+            try:
+                self.canvas_palette.pack(side=LEFT, fill='both', expand=True)
+                self.scrollbar.pack(side=RIGHT, fill='y')
+            except Exception:
+                pass
+
+        # Keep the embedded window sized to the canvas so content doesn't overflow horizontally
+        self.canvas_palette.bind('<Configure>', self._on_palette_canvas_configure)
+
+        # Enable mousewheel scrolling when pointer is over the palette area (supports Windows/macOS/Linux)
+        self.scrollable.bind('<Enter>', lambda e: self._bind_palette_mousewheel())
+        self.scrollable.bind('<Leave>', lambda e: self._unbind_palette_mousewheel())
+
+        # Enable mousewheel scrolling when pointer is over the palette area (supports Windows/macOS/Linux)
+        self.scrollable.bind('<Enter>', lambda e: self._bind_palette_mousewheel())
+        self.scrollable.bind('<Leave>', lambda e: self._unbind_palette_mousewheel())
 
         # bottom bar with Settings on the left and status text to the right (keeps placement simple and native)
         bottom = ttk.Frame(self)
@@ -498,6 +550,127 @@ class ColorExtractor(tk.Tk):
             except Exception:
                 pass
         return tkfont.Font()
+
+    # --- Palette mousewheel helpers -------------------------------------------------
+    def _on_palette_mousewheel(self, event):
+        try:
+            import sys
+            # macOS reports raw delta values whereas Windows multiples are usually +/-120
+            if sys.platform == 'darwin':
+                delta = int(-1 * event.delta)
+            else:
+                delta = int(-1 * (event.delta // 120))
+            self.canvas_palette.yview_scroll(delta, 'units')
+        except Exception:
+            pass
+
+    def _on_palette_button4(self, event):
+        try:
+            self.canvas_palette.yview_scroll(-1, 'units')
+        except Exception:
+            pass
+
+    def _on_palette_button5(self, event):
+        try:
+            self.canvas_palette.yview_scroll(1, 'units')
+        except Exception:
+            pass
+
+    def _bind_palette_mousewheel(self):
+        try:
+            self.canvas_palette.bind_all('<MouseWheel>', self._on_palette_mousewheel)
+            self.canvas_palette.bind_all('<Button-4>', self._on_palette_button4)
+            self.canvas_palette.bind_all('<Button-5>', self._on_palette_button5)
+        except Exception:
+            pass
+
+    def _unbind_palette_mousewheel(self):
+        try:
+            self.canvas_palette.unbind_all('<MouseWheel>')
+            self.canvas_palette.unbind_all('<Button-4>')
+            self.canvas_palette.unbind_all('<Button-5>')
+        except Exception:
+            pass
+
+    # --- Custom scrollbar behavior -----------------------------------------------
+    def _on_scrollbar(self, *args):
+        """Intercept scrollbar commands and map them to canvas yview while
+        preserving a minimum visual thumb size for usability."""
+        try:
+            if not args:
+                return
+            cmd = args[0]
+            # current real view
+            a, b = self.canvas_palette.yview()
+            real_span = float(b) - float(a)
+            if cmd == 'moveto':
+                frac = float(args[1])
+                # If the real span is large enough, passthrough
+                if real_span >= self._min_scroll_frac:
+                    self.canvas_palette.yview_moveto(frac)
+                    return
+                # otherwise map visual position to real content position
+                v = max(0.0, min(frac, 1.0 - self._min_scroll_frac))
+                denom = (1.0 - self._min_scroll_frac)
+                if denom == 0 or (1.0 - real_span) == 0:
+                    r = 0.0
+                else:
+                    r = v * (1.0 - real_span) / denom
+                r = max(0.0, min(r, 1.0 - real_span))
+                self.canvas_palette.yview_moveto(r)
+            elif cmd == 'scroll':
+                # scroll N units/pages - pass through to canvas
+                n = int(args[1])
+                what = args[2]
+                self.canvas_palette.yview_scroll(n, what)
+        except Exception:
+            pass
+
+    def _on_palette_canvas_configure(self, event):
+        """Ensure the embedded scrollable frame matches the visible canvas width minus
+        the scrollbar thickness and schedule a re-render so tile columns adapt."""
+        try:
+            # compute usable width for the embedded frame
+            try:
+                sbw = self.scrollbar.winfo_width() or 18
+            except Exception:
+                sbw = 18
+            new_w = max(32, event.width - sbw)
+            try:
+                self.canvas_palette.itemconfig(self._palette_window, width=new_w)
+            except Exception:
+                pass
+            # throttle re-render so window resizing doesn't redraw excessively
+            try:
+                if hasattr(self, '_palette_rerender_after') and self._palette_rerender_after:
+                    self.after_cancel(self._palette_rerender_after)
+                self._palette_rerender_after = self.after(100, lambda: self._render_palette_list())
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _on_canvas_scroll(self, a, b):
+        """Custom yscroll handler to present a minimum visual thumb size when
+        the real viewport fraction is very small."""
+        try:
+            a = float(a)
+            b = float(b)
+            real_span = b - a
+            if real_span >= self._min_scroll_frac:
+                # show real span
+                self.scrollbar.set(a, b)
+                return
+            # compute visual top based on linear mapping
+            denom = (1.0 - real_span)
+            if denom == 0:
+                a_vis = 0.0
+            else:
+                a_vis = a * (1.0 - self._min_scroll_frac) / denom
+                a_vis = max(0.0, min(a_vis, 1.0 - self._min_scroll_frac))
+            self.scrollbar.set(a_vis, a_vis + self._min_scroll_frac)
+        except Exception:
+            pass
 
     def _button_layout_debug_check(self):
         """Measure buttons and highlight/log any that are too small for their text (width or height).
@@ -898,9 +1071,28 @@ class ColorExtractor(tk.Tk):
                     if getattr(self, 'add_btn', None) and getattr(self, 'rem_btn', None):
                         creq = self.add_btn.winfo_reqwidth() + self.rem_btn.winfo_reqwidth() + 16
                     inferred = max((creq + 48) if creq else 0, 240)
+                    # Respect the previously-set firm minimum if present
+                    try:
+                        firm = getattr(self, '_right_pane_minsize', None) or 0
+                        inferred = max(inferred, firm)
+                    except Exception:
+                        pass
                     right_min = inferred
                     # record so later checks are consistent
                     self._right_pane_minsize = right_min
+                    # ensure the PanedWindow enforces it immediately
+                    try:
+                        if getattr(self, 'main_paned', None) and getattr(self, '_right_pane_widget', None):
+                            try:
+                                self.main_paned.paneconfigure(self._right_pane_widget, minsize=self._right_pane_minsize)
+                            except Exception:
+                                try:
+                                    # fallback: configure by index (1 usually right pane)
+                                    self.main_paned.paneconfigure(1, minsize=self._right_pane_minsize)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
                     if BUTTON_LAYOUT_DEBUG and force:
                         _debug_log(f"[PANE_DEBUG] inferred right pane minsize: {right_min}")
                 except Exception:
@@ -1022,16 +1214,26 @@ class ColorExtractor(tk.Tk):
         # clear
         for child in self.scrollable.winfo_children():
             child.destroy()
+        # Determine tile size and adapt number of columns to available canvas width so
+        # the layout stays readable and vertical scrolling is used when necessary.
+        tile_w = 80
+        padding_x = 12  # includes per-tile padx
+        try:
+            canvas_w = max(1, self.canvas_palette.winfo_width())
+        except Exception:
+            canvas_w = 600
+        # calculate max columns that can fit without horizontal overflow
+        max_cols = max(1, canvas_w // (tile_w + padding_x))
+        cols = min(max_cols, len(self.palette.colors) or 1)
         # create compact color tiles with overlayed hex and count labels; keep copy-on-click
-        cols = 6
         for i, c in enumerate(self.palette.colors):
             r = i // cols
             cc = i % cols
             frame = ttk.Frame(self.scrollable)
-            frame.grid(row=r, column=cc, padx=6, pady=6)
+            frame.grid(row=r, column=cc, padx=6, pady=6, sticky='n')
             enabled = c.get('enabled', True)
             block_color = c['hex'] if enabled else '#888888'
-            block = tk.Frame(frame, background=block_color, width=80, height=80, relief='flat')
+            block = tk.Frame(frame, background=block_color, width=tile_w, height=tile_w, relief='flat')
             block.grid(row=0, column=0)
             block.grid_propagate(False)
             # toggle enabled on single click

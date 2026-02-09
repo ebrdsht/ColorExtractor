@@ -27,7 +27,7 @@ A simple, local Tkinter app for extracting color palettes from images.
 
 ---
 
-## Quick start (run from source) ▶
+## Quick start (run from source)
 
 1. Create and activate a virtual environment (recommended):
 

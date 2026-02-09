@@ -1,10 +1,10 @@
-# ColorExtractor 
+# ColorExtractor
 
 A simple, local Tkinter app for extracting color palettes from images.
 
 ---
 
-## Quick overview 
+## Quick overview
 
 - Open an image and generate a representative color palette.
 - Choose a fixed number of colors or let the tool generate a compact palette.
@@ -12,7 +12,7 @@ A simple, local Tkinter app for extracting color palettes from images.
 
 ---
 
-## Key features 
+## Key features
 
 - **Open Image** — load common image formats and ignore fully transparent pixels.
 - **Fixed-count or full scan** — request a specific number of colors or scan the image for unique colors.
